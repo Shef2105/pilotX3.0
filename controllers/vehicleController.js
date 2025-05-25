@@ -1,19 +1,19 @@
 import pool from '../db/connection.js';
 
-// Get all veicoli
+// Get all vehicles
 export const getAllVehicles = async (req, res) => {
   try {
-    const [veicoli] = await pool.query(
-      `SELECT v.*, c.name as category_name 
+    const [vehicles] = await pool.query(
+      `SELECT v.*, c.name as category 
        FROM veicoli v
-       JOIN vehicle_categories c ON v.category_id = c.id
-       WHERE v.status = 'available'
-       ORDER BY v.hourly_rate ASC`
+       LEFT JOIN vehicle_categories c ON v.categoria = c.id
+       WHERE v.stato = 'disponibile'
+       ORDER BY v.id ASC`
     );
     
-    res.status(200).json({ veicoli });
+    res.status(200).json({ vehicles });
   } catch (error) {
-    console.error('Get all veicoli error:', error);
+    console.error('Get all vehicles error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -23,53 +23,21 @@ export const getVehicleById = async (req, res) => {
   const { id } = req.params;
   
   try {
-    const [veicoli] = await pool.query(
-      `SELECT v.*, c.name as category_name 
+    const [vehicles] = await pool.query(
+      `SELECT v.*, c.name as category 
        FROM veicoli v
-       JOIN vehicle_categories c ON v.category_id = c.id
+       LEFT JOIN vehicle_categories c ON v.categoria = c.id 
        WHERE v.id = ?`,
       [id]
     );
     
-    if (veicoli.length === 0) {
+    if (vehicles.length === 0) {
       return res.status(404).json({ message: 'Vehicle not found' });
     }
     
-    res.status(200).json({ vehicle: veicoli[0] });
+    res.status(200).json({ vehicle: vehicles[0] });
   } catch (error) {
     console.error('Get vehicle by ID error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
-// Get veicoli by category
-export const getVehiclesByCategory = async (req, res) => {
-  const { categoryId } = req.params;
-  
-  try {
-    const [veicoli] = await pool.query(
-      `SELECT v.*, c.name as category_name 
-       FROM veicoli v
-       JOIN vehicle_categories c ON v.category_id = c.id
-       WHERE v.category_id = ? AND v.status = 'available'
-       ORDER BY v.hourly_rate ASC`,
-      [categoryId]
-    );
-    
-    res.status(200).json({ veicoli });
-  } catch (error) {
-    console.error('Get veicoli by category error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
-// Get all categories
-export const getAllCategories = async (req, res) => {
-  try {
-    const [categories] = await pool.query('SELECT * FROM vehicle_categories ORDER BY name ASC');
-    res.status(200).json({ categories });
-  } catch (error) {
-    console.error('Get all categories error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -84,27 +52,27 @@ export const checkVehicleAvailability = async (req, res) => {
   
   try {
     // Check if vehicle exists and is available
-    const [veicoli] = await pool.query(
-      'SELECT * FROM veicoli WHERE id = ? AND status = "available"',
+    const [vehicles] = await pool.query(
+      'SELECT * FROM veicoli WHERE id = ? AND stato = "disponibile"',
       [vehicleId]
     );
     
-    if (veicoli.length === 0) {
+    if (vehicles.length === 0) {
       return res.status(404).json({ message: 'Vehicle not found or not available' });
     }
     
     // Check if vehicle is already booked for the requested period
-    const [prenotazioni] = await pool.query(
+    const [bookings] = await pool.query(
       `SELECT * FROM prenotazioni 
-       WHERE vehicle_id = ? 
-       AND status IN ('pending', 'confirmed') 
-       AND ((start_date BETWEEN ? AND ?) 
-       OR (end_date BETWEEN ? AND ?) 
-       OR (start_date <= ? AND end_date >= ?))`,
+       WHERE veicolo_id = ? 
+       AND stato IN ('pending', 'confirmed') 
+       AND ((data_inizio BETWEEN ? AND ?) 
+       OR (data_fine BETWEEN ? AND ?) 
+       OR (data_inizio <= ? AND data_fine >= ?))`,
       [vehicleId, startDate, endDate, startDate, endDate, startDate, endDate]
     );
     
-    if (prenotazioni.length > 0) {
+    if (bookings.length > 0) {
       return res.status(400).json({ 
         available: false,
         message: 'Vehicle is not available for the selected dates' 
@@ -115,22 +83,22 @@ export const checkVehicleAvailability = async (req, res) => {
     const startDateTime = new Date(startDate);
     const endDateTime = new Date(endDate);
     const durationHours = (endDateTime - startDateTime) / (1000 * 60 * 60);
-    const durationDays = durationHours / 24;
     
     let totalPrice;
     if (durationHours < 24) {
-      totalPrice = veicoli[0].hourly_rate * durationHours;
+      totalPrice = vehicles[0].tariffa_oraria * durationHours;
     } else {
-      totalPrice = veicoli[0].daily_rate * Math.ceil(durationDays);
+      const durationDays = Math.ceil(durationHours / 24);
+      totalPrice = vehicles[0].tariffa_giornaliera * durationDays;
     }
     
     res.status(200).json({
       available: true,
       totalPrice: parseFloat(totalPrice.toFixed(2)),
-      vehicle: veicoli[0]
+      vehicle: vehicles[0]
     });
   } catch (error) {
-    console.error('Check vehicle availability error:', error);
+    console.error('Check availability error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
